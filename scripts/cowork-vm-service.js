@@ -875,7 +875,8 @@ const QMP_CAPABILITIES = JSON.stringify({ execute: 'qmp_capabilities' });
 
 /** Event types forwarded from the guest sdk-daemon to subscribers. */
 const FORWARDED_EVENTS = new Set([
-    'stdout', 'stderr', 'exit', 'networkStatus', 'apiReachability', 'ready',
+    'stdout', 'stderr', 'exit', 'networkStatus', 'apiReachability',
+    'ready', 'startupStep',
 ]);
 
 class KvmBackend extends BackendBase {
@@ -907,7 +908,9 @@ class KvmBackend extends BackendBase {
         // Ensure VM directory exists
         fs.mkdirSync(VM_BASE_DIR, { recursive: true });
 
-        // Convert VHDX to qcow2 if needed
+        // Convert VHDX to qcow2 if present in VM_BASE_DIR (manual
+        // placement). The main conversion happens in startVM() using
+        // the app-provided bundlePath.
         const vhdxPath = path.join(VM_BASE_DIR, 'rootfs.vhdx');
         const qcow2Path = path.join(VM_BASE_DIR, 'rootfs.qcow2');
         if (fs.existsSync(vhdxPath) && !fs.existsSync(qcow2Path)) {
@@ -949,10 +952,47 @@ class KvmBackend extends BackendBase {
             return {};
         }
 
-        this.bundlePath = params.bundlePath;
+        this.bundlePath = params.bundlePath || VM_BASE_DIR;
         const memoryGB = params.memoryGB ||
             Math.ceil(this.config.memoryMB / 1024);
         const cpuCount = this.config.cpuCount;
+
+        this.emitEvent({
+            type: 'startupStep',
+            step: 'prepare_session', status: 'running',
+        });
+
+        // The app downloads VM images (rootfs.vhdx, vmlinuz, initrd)
+        // to bundlePath (~/.config/Claude/vm_bundles/claudevm.bundle/).
+        // Convert VHDX to qcow2 if needed (the app downloads VHDX
+        // format using the win32 manifest entries).
+        const bundleDir = this.bundlePath;
+        const vhdxPath = path.join(bundleDir, 'rootfs.vhdx');
+        const qcow2Path = path.join(bundleDir, 'rootfs.qcow2');
+        if (fs.existsSync(vhdxPath) && !fs.existsSync(qcow2Path)) {
+            log('KvmBackend: converting rootfs.vhdx to qcow2...');
+            try {
+                execFileSync('qemu-img', [
+                    'convert', '-f', 'vhdx', '-O', 'qcow2',
+                    vhdxPath, qcow2Path
+                ], { stdio: 'pipe', timeout: 300000 });
+                log('KvmBackend: rootfs conversion complete');
+            } catch (e) {
+                logError('KvmBackend: rootfs conversion failed:',
+                    e.message);
+                throw new Error(
+                    `rootfs conversion failed: ${e.message}`);
+            }
+        }
+
+        // Fall back: check VM_BASE_DIR if bundle has no rootfs
+        const basePath = fs.existsSync(qcow2Path)
+            ? qcow2Path
+            : path.join(VM_BASE_DIR, 'rootfs.qcow2');
+        if (!fs.existsSync(basePath)) {
+            throw new Error(
+                `rootfs not found in ${bundleDir} or ${VM_BASE_DIR}`);
+        }
 
         // Create session directory
         const sessionId = crypto.randomUUID();
@@ -961,7 +1001,6 @@ class KvmBackend extends BackendBase {
 
         // Create overlay disk
         const overlayPath = path.join(this.sessionDir, 'overlay.qcow2');
-        const basePath = path.join(VM_BASE_DIR, 'rootfs.qcow2');
         try {
             execFileSync('qemu-img', [
                 'create', '-f', 'qcow2', '-b', basePath,
@@ -977,8 +1016,8 @@ class KvmBackend extends BackendBase {
         this.monitorSock = path.join(this.sessionDir, 'qmp.sock');
         this.bridgeSock = path.join(this.sessionDir, 'bridge.sock');
 
-        const vmlinuzPath = path.join(VM_BASE_DIR, 'vmlinuz');
-        const initrdPath = path.join(VM_BASE_DIR, 'initrd');
+        const vmlinuzPath = path.join(bundleDir, 'vmlinuz');
+        const initrdPath = path.join(bundleDir, 'initrd');
 
         // Start virtiofsd for home directory share (if available)
         const virtiofsSock = path.join(this.sessionDir, 'virtiofs.sock');
@@ -1059,15 +1098,22 @@ class KvmBackend extends BackendBase {
             logError('KvmBackend: session disk creation failed:', e.message);
         }
 
-        // smol-bin disk (contains SDK binaries → /dev/vdc, detected by guest via blkid)
-        const smolBinPath = path.join(VM_BASE_DIR, 'smol-bin.qcow2');
-        if (fs.existsSync(smolBinPath)) {
+        // smol-bin disk (contains SDK binaries → /dev/vdc, detected
+        // by guest via blkid). Check bundle dir first, then VM_BASE_DIR.
+        // Not fatal if missing — SDK can be accessed via virtiofs.
+        const smolBinPath =
+            [bundleDir, VM_BASE_DIR]
+                .map(d => path.join(d, 'smol-bin.qcow2'))
+                .find(p => fs.existsSync(p));
+        if (smolBinPath) {
             qemuArgs.push(
-                '-drive', `file=${smolBinPath},format=qcow2,if=virtio,readonly=on`
+                '-drive',
+                `file=${smolBinPath},format=qcow2,if=virtio,readonly=on`
             );
             log(`KvmBackend: smol-bin attached from ${smolBinPath}`);
         } else {
-            logError('KvmBackend: smol-bin.qcow2 not found — guest sdk-daemon will fail');
+            log('KvmBackend: smol-bin.qcow2 not found — ' +
+                'SDK will be accessed via virtiofs if available');
         }
 
         // vsock
@@ -1095,6 +1141,10 @@ class KvmBackend extends BackendBase {
         }
 
         // Start QEMU
+        this.emitEvent({
+            type: 'startupStep',
+            step: 'start_vm', status: 'running',
+        });
         log(`KvmBackend: starting QEMU with CID ${this.guestCid}`);
         this.qemuProcess = spawnProcess('qemu-system-x86_64', qemuArgs, {
             stdio: ['pipe', 'pipe', 'pipe'],
@@ -1125,7 +1175,17 @@ class KvmBackend extends BackendBase {
 
         // Wait for guest sdk-daemon to connect via vsock bridge
         // (_waitForGuest starts both the bridge server and socat listener)
+        this.emitEvent({
+            type: 'startupStep',
+            step: 'wait_for_guest', status: 'running',
+        });
         await this._waitForGuest();
+
+        this.emitEvent({
+            type: 'startupStep',
+            step: 'wait_for_guest',
+            status: this.guestConnected ? 'completed' : 'failed',
+        });
 
         return {};
     }
@@ -1360,10 +1420,11 @@ class KvmBackend extends BackendBase {
             await this._forwardToGuest({
                 method: 'installSdk', params: this._pendingSdkInstall
             });
-            this._pendingSdkInstall = null;
         } catch (e) {
             log(`KvmBackend: installSdk forward failed: ${e.message}`);
         }
+        // Clear regardless of success/failure to avoid infinite retries
+        this._pendingSdkInstall = null;
     }
 
     _forwardToGuest(request) {
@@ -1605,8 +1666,15 @@ class KvmBackend extends BackendBase {
             // Compute the guest-side path via virtiofs mount
             const homeDir = os.homedir();
             const relPath = path.relative(homeDir, resolved);
-            this.guestSdkPath = path.join(VIRTIOFS_GUEST_MOUNT, relPath);
-            log(`KvmBackend: guest SDK path: ${this.guestSdkPath}`);
+            if (relPath.startsWith('..')) {
+                log('KvmBackend: SDK path is outside home dir,' +
+                    ` cannot map to guest: ${resolved}`);
+            } else {
+                this.guestSdkPath = path.join(
+                    VIRTIOFS_GUEST_MOUNT, relPath
+                );
+                log(`KvmBackend: guest SDK path: ${this.guestSdkPath}`);
+            }
         }
         // Forward to guest so it can prepare the SDK (or defer until spawn)
         this._pendingSdkInstall = params;
@@ -1654,14 +1722,14 @@ function detectBackend(emitEvent) {
         }
     }
 
-    // Auto-detect: try KVM first, then bwrap, then host
+    // Auto-detect: try KVM first, then bwrap, then host.
+    // Note: rootfs is NOT checked here — the app downloads it to
+    // bundlePath which isn't known until startVM(). The rootfs
+    // check happens at startVM time instead.
     try {
         fs.accessSync('/dev/kvm', fs.constants.R_OK | fs.constants.W_OK);
         execFileSync('which', ['qemu-system-x86_64'], { stdio: 'pipe' });
         fs.accessSync('/dev/vhost-vsock', fs.constants.R_OK);
-        fs.accessSync(
-            path.join(VM_BASE_DIR, 'rootfs.qcow2'), fs.constants.R_OK
-        );
         log('Backend: kvm (all requirements met)');
         return new KvmBackend(emitEvent);
     } catch (e) {
@@ -1771,6 +1839,14 @@ class VMManager {
         return this.backend.addApprovedOauthToken(params);
     }
 
+    // --- Debug Logging ---
+
+    setDebugLogging(params) {
+        const { enabled } = params;
+        log(`setDebugLogging: ${enabled}`);
+        return {};
+    }
+
     // --- Events (managed by VMManager, not backend) ---
 
     subscribeEvents(socket) {
@@ -1814,6 +1890,7 @@ const METHODS = {
     readFile: (params) => vm.readFile(params),
     installSdk: (params) => vm.installSdk(params),
     addApprovedOauthToken: (params) => vm.addApprovedOauthToken(params),
+    setDebugLogging: (params) => vm.setDebugLogging(params),
     subscribeEvents: (params, socket) => vm.subscribeEvents(socket),
 };
 
