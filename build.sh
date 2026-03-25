@@ -1316,7 +1316,6 @@ if (serviceErrorIdx !== -1) {
             // stream/pipeline var: VAR.pipeline(
             const streamMatch = region.match(/(\w+)\.pipeline\(/);
             // arch function: const VAR=FUNC(), used in smol-bin
-            // Pattern: const LOCALVAR=ARCHFUNC(),LOCALVAR2=PATH.join
             const archMatch = region.match(
                 /const\s+(\w+)\s*=\s*(\w+)\(\)\s*,\s*\w+\s*=\s*\w+\.join/
             );
@@ -1358,13 +1357,8 @@ if (serviceErrorIdx !== -1) {
                 code = code.substring(0, closingBrace + 1) +
                     linuxBlock +
                     code.substring(closingBrace + 1);
-                console.log('  Injected Linux smol-bin copy block' +
-                    ' (skips _.configure)');
-                console.log('    vars: path=' + pathVar +
-                    ' fs=' + fsVar + ' log=' + logVar +
-                    ' stream=' + streamVar +
-                    ' arch=' + archFunc +
-                    ' bundle=' + bundleVar);
+                console.log('  Injected Linux smol-bin copy block (skips _.configure)');
+                console.log(`    vars: path=${pathVar} fs=${fsVar} log=${logVar} stream=${streamVar} arch=${archFunc} bundle=${bundleVar}`);
                 patchCount++;
             } else {
                 const missing = [];
@@ -1374,17 +1368,13 @@ if (serviceErrorIdx !== -1) {
                 if (!streamMatch) missing.push('stream');
                 if (!archMatch) missing.push('arch');
                 if (!bundleMatch) missing.push('bundlePath');
-                console.log('  WARNING: Could not extract' +
-                    ' minified variable(s): ' +
-                    missing.join(', '));
+                console.log(`  WARNING: Could not extract minified variable(s): ${missing.join(', ')}`);
             }
         } else {
-            console.log('  WARNING: Could not find closing' +
-                ' brace after Windows VM service anchor');
+            console.log('  WARNING: Could not find closing brace after Windows VM service anchor');
         }
     } else {
-        console.log('  WARNING: Could not find Windows VM' +
-            ' service anchor for smol-bin patch');
+        console.log('  WARNING: Could not find Windows VM service anchor for smol-bin patch');
     }
 }
 
