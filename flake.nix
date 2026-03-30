@@ -28,7 +28,7 @@
           claude-desktop-fhs = pkgs.callPackage ./nix/fhs.nix {
             inherit claude-desktop;
           };
-          default = claude-desktop;
+          default = claude-desktop-fhs;
         };
       };
 
