@@ -1,14 +1,14 @@
 Package: claude-desktop
-Version: 1.1.9669-1.3.25
+Version: 1.1.9669-1.3.26
 Architecture: amd64
 Maintainer: Claude Desktop Linux Maintainers
 Priority: optional
 Section: utils
-Filename: pool/main/c/claude-desktop/claude-desktop_1.1.9669-1.3.25_amd64.deb
-Size: 98826380
-SHA256: c1083201a3226e5a1151a03ded20a41cfaa74e8933aa054e53b9aaf475fb8bd4
-SHA1: e264e363796cf3f8889a243a92a466f20403be97
-MD5sum: bc02c5316d228247b0300e01644d4021
+Filename: pool/main/c/claude-desktop/claude-desktop_1.1.9669-1.3.26_amd64.deb
+Size: 98829416
+SHA256: 8f9262c42af8cba930e753e3daee20606dcf78e5f3ab3b6302f4e9f7f964a7cc
+SHA1: 689ee8f15a17e37fa84397b4589b891a24961713
+MD5sum: 8f95cc1dc2dfb14279f395451482315c
 Description: Claude Desktop for Linux
  Claude is an AI assistant from Anthropic.
  This package provides the desktop interface for Claude.
