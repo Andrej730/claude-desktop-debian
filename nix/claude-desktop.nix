@@ -7,7 +7,7 @@
   icoutils,
   imagemagick,
   nodejs,
-  nodePackages,
+  asar,
   makeDesktopItem,
   python3,
   bash,
@@ -61,7 +61,7 @@ stdenvNoCC.mkDerivation {
   nativeBuildInputs = [
     p7zip
     nodejs
-    nodePackages.asar
+    asar
     icoutils
     imagemagick
     bash
