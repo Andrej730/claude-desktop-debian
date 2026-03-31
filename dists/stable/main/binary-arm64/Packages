@@ -5,10 +5,10 @@ Maintainer: Claude Desktop Linux Maintainers
 Priority: optional
 Section: utils
 Filename: pool/main/c/claude-desktop/claude-desktop_1.1.9669-1.3.25_arm64.deb
-Size: 98115608
-SHA256: ec85e51e90441a3d12901af02786b1608bd7a636fc4c43db458743e7d116d0db
-SHA1: ce78e863cc52a24d3af4e5d293e94c90353ba4c7
-MD5sum: f3c40c4092f6449e283302bfc32e4078
+Size: 98107980
+SHA256: 1307118a4e626b4a63a647178a6d72d421919556cf0f5880a3bf21a7c899228c
+SHA1: 261a9de5e4d75c163ce08b310c1a9dfbfc0b046a
+MD5sum: 5f1373d401ccf9d6f42fe201a914d18f
 Description: Claude Desktop for Linux
  Claude is an AI assistant from Anthropic.
  This package provides the desktop interface for Claude.
