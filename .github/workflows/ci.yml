@@ -20,6 +20,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   test-flags:
     name: Test Flags Parsing
@@ -208,6 +212,7 @@ jobs:
 
       - name: Run compare-releases (upstream change)
         if: steps.prev.outcome == 'success' && steps.prev.outputs.type == 'upstream'
+        timeout-minutes: 5
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -300,7 +305,7 @@ jobs:
           } > ../compare-work/summary.md
 
       - name: Generate fallback release notes
-        if: ${{ !cancelled() }}
+        if: ${{ always() }}
         run: |
           # Only generate fallback if AI-generated notes don't exist
           if [[ -f compare-work/summary.md ]]; then
@@ -358,6 +363,7 @@ jobs:
           } > compare-work/summary.md
 
       - name: Create GitHub Release
+        if: ${{ always() }}
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*
