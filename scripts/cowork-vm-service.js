@@ -12,10 +12,10 @@
  *   - KvmBackend:   QEMU/KVM virtual machine with vsock communication
  *
  * Backend selection (auto-detected or overridden via COWORK_VM_BACKEND env):
- *   1. bwrap â if bwrap is installed and functional (default)
- *   2. kvm   â if /dev/kvm, qemu-system-x86_64, and /dev/vhost-vsock
+ *   1. bwrap — if bwrap is installed and functional (default)
+ *   2. kvm   — if /dev/kvm, qemu-system-x86_64, and /dev/vhost-vsock
  *              are available (rootfs checked at startVM time)
- *   3. host  â fallback, no isolation
+ *   3. host  — fallback, no isolation
  *
  * Protocol:
  *   Transport: Unix domain socket at $XDG_RUNTIME_DIR/cowork-vm-service.sock
@@ -194,6 +194,7 @@ function resolveSubpath(subpath) {
     }
     return path.resolve(path.join(os.homedir(), subpath));
 }
+
 /**
  * Build a mount-name -> host-path mapping from mountBinds (prior
  * mountPath() calls) and additionalMounts (spawn params).
@@ -215,7 +216,7 @@ function buildMountMap(additionalMounts, mountBinds) {
             const resolved = resolveSubpath(info.path);
             if (resolved !== homeDir &&
                 !resolved.startsWith(homeDir + path.sep)) {
-                log(`buildMountMap: rejecting "${name}" â resolves outside home: ${resolved}`);
+                log(`buildMountMap: rejecting "${name}" — resolves outside home: ${resolved}`);
                 continue;
             }
             map[name] = resolved;
@@ -238,20 +239,16 @@ function buildSpawnEnv(appEnv, mountMap) {
     };
 
     // Translate CLAUDE_CONFIG_DIR from guest path to host path, or
-    // fix doubled-home host paths produced by app.asar's own
-    // path.join(homedir, subpath) on root-relative subpaths.
+    // remove it so Claude Code falls back to ~/.claude/.
     if (mergedEnv.CLAUDE_CONFIG_DIR) {
         if (mergedEnv.CLAUDE_CONFIG_DIR.startsWith('/sessions/')) {
-            // Guest path — translate via mount map
+            // translate guest path to host path
             const translated = translateGuestPath(
                 mergedEnv.CLAUDE_CONFIG_DIR, mountMap
             );
-            if (translated) {
+            if (translated !== mergedEnv.CLAUDE_CONFIG_DIR) {
                 log(`buildSpawnEnv: translated CLAUDE_CONFIG_DIR: ${mergedEnv.CLAUDE_CONFIG_DIR} -> ${translated}`);
                 mergedEnv.CLAUDE_CONFIG_DIR = translated;
-            } else {
-                log(`buildSpawnEnv: removing VM guest CLAUDE_CONFIG_DIR: ${mergedEnv.CLAUDE_CONFIG_DIR}`);
-                delete mergedEnv.CLAUDE_CONFIG_DIR;
             }
         } else {
             // Host path — may be doubled by app.asar's own
@@ -289,7 +286,7 @@ function cleanSpawnArgs(rawArgs, mountMap) {
             );
             if (hostPath) {
                 // --plugin-dir needs the plugin root, not a skills/
-                // subdirectory â walk up to find it.
+                // subdirectory — walk up to find it.
                 if (flag === '--plugin-dir') {
                     hostPath = resolvePluginRoot(
                         hostPath, os.homedir()
@@ -392,7 +389,7 @@ function resolveSdkBinary(sdkSubpath, version, label) {
 /**
  * Resolve the actual command binary to execute.
  * Priority: 1) SDK binary from installSdk, 2) command path, 3) which
- * Returns { command, error } â error is set if command not found.
+ * Returns { command, error } — error is set if command not found.
  */
 function resolveCommand(command, sdkBinaryPath) {
     if (sdkBinaryPath && fs.existsSync(sdkBinaryPath)) {
@@ -497,7 +494,7 @@ class BackendBase {
 }
 
 // ============================================================
-// LocalBackend â Shared logic for host-local backends
+// LocalBackend — Shared logic for host-local backends
 // ============================================================
 
 /**
@@ -589,7 +586,7 @@ class LocalBackend extends BackendBase {
         const mountMap = buildMountMap(
             additionalMounts, this.mountBinds
         );
-        // Store for readFile() â last spawn wins (single-session in practice)
+        // Store for readFile() — last spawn wins (single-session in practice)
         this.lastMountMap = mountMap;
 
         if (Object.keys(mountMap).length > 0) {
@@ -710,7 +707,7 @@ class LocalBackend extends BackendBase {
 }
 
 // ============================================================
-// HostBackend â Run processes directly on host (no isolation)
+// HostBackend — Run processes directly on host (no isolation)
 // ============================================================
 
 class HostBackend extends LocalBackend {
@@ -768,7 +765,7 @@ class HostBackend extends LocalBackend {
 }
 
 // ============================================================
-// BwrapBackend â Bubblewrap namespace sandbox
+// BwrapBackend — Bubblewrap namespace sandbox
 // ============================================================
 
 class BwrapBackend extends LocalBackend {
@@ -894,7 +891,7 @@ class BwrapBackend extends LocalBackend {
                             fs.unlinkSync(hostPath);
                         }
                     }
-                } catch { /* ENOENT is fine â path doesn't exist yet */ }
+                } catch { /* ENOENT is fine — path doesn't exist yet */ }
                 if (!fs.existsSync(hostPath)) {
                     fs.mkdirSync(hostPath, { recursive: true });
                 }
@@ -949,12 +946,12 @@ class BwrapBackend extends LocalBackend {
 }
 
 // ============================================================
-// KvmBackend â QEMU/KVM virtual machine
+// KvmBackend — QEMU/KVM virtual machine
 // ============================================================
 
 const VM_BASE_DIR = path.join(os.homedir(), '.local/share/claude-desktop/vm');
 const VM_SESSION_DIR = path.join(VM_BASE_DIR, 'sessions');
-const VSOCK_GUEST_PORT = 51234;  // 0xC822 â matches guest sdk-daemon
+const VSOCK_GUEST_PORT = 51234;  // 0xC822 — matches guest sdk-daemon
 const HOME_SHARE_MOUNT_TAG = 'claudeshared';
 const HOME_SHARE_GUEST_MOUNT = '/mnt/.virtiofs-root';
 const QMP_CAPABILITIES = JSON.stringify({ execute: 'qmp_capabilities' });
@@ -1146,7 +1143,7 @@ class KvmBackend extends BackendBase {
         }
 
         // Fallback: use virtio-9p if virtiofsd failed. virtio-9p is
-        // built into QEMU â no external daemon, no privileges needed.
+        // built into QEMU — no external daemon, no privileges needed.
         // Lower performance than virtiofs but works everywhere.
         if (!this.virtiofsdProcess) {
             log('KvmBackend: using virtio-9p for home directory share');
@@ -1180,12 +1177,12 @@ class KvmBackend extends BackendBase {
             );
         }
 
-        // Disk (rootfs overlay â /dev/vda)
+        // Disk (rootfs overlay → /dev/vda)
         qemuArgs.push(
             '-drive', `file=${overlayPath},format=qcow2,if=virtio`
         );
 
-        // Session disk (â /dev/vdb, formatted by guest sdk-daemon)
+        // Session disk (→ /dev/vdb, formatted by guest sdk-daemon)
         const sessionDiskPath = path.join(this.sessionDir, 'sessiondata.qcow2');
         try {
             execFileSync('qemu-img', [
@@ -1199,7 +1196,7 @@ class KvmBackend extends BackendBase {
             logError('KvmBackend: session disk creation failed:', e.message);
         }
 
-        // smol-bin disk (contains SDK binaries â /dev/vdc, detected
+        // smol-bin disk (contains SDK binaries → /dev/vdc, detected
         // by guest via blkid). The app copies smol-bin.vhdx from
         // resources to bundleDir at startup. Convert to qcow2 if needed.
         const smolVhdx = path.join(bundleDir, 'smol-bin.vhdx');
@@ -1217,7 +1214,7 @@ class KvmBackend extends BackendBase {
             }
         }
         // Check bundle dir first, then VM_BASE_DIR.
-        // Not fatal if missing â SDK can be accessed via virtiofs.
+        // Not fatal if missing — SDK can be accessed via virtiofs.
         const smolBinPath =
             [bundleDir, VM_BASE_DIR]
                 .map(d => path.join(d, 'smol-bin.qcow2'))
@@ -1229,7 +1226,7 @@ class KvmBackend extends BackendBase {
             );
             log(`KvmBackend: smol-bin attached from ${smolBinPath}`);
         } else {
-            log('KvmBackend: smol-bin.qcow2 not found â ' +
+            log('KvmBackend: smol-bin.qcow2 not found — ' +
                 'SDK will be accessed via virtiofs if available');
         }
 
@@ -1260,7 +1257,7 @@ class KvmBackend extends BackendBase {
         } else if (this.homeShareType === '9p') {
             // virtio-9p: built into QEMU, no daemon, works unprivileged.
             // security_model=none: like passthrough but ignores chown
-            // failures â designed for unprivileged QEMU operation.
+            // failures — designed for unprivileged QEMU operation.
             qemuArgs.push(
                 '-virtfs',
                 `local,path=${os.homedir()},mount_tag=${HOME_SHARE_MOUNT_TAG}` +
@@ -1325,7 +1322,7 @@ class KvmBackend extends BackendBase {
         return new Promise((resolve) => {
             const tryConnect = () => {
                 if (Date.now() - start > timeout) {
-                    logError('KvmBackend: QMP connection timeout â VM control limited');
+                    logError('KvmBackend: QMP connection timeout — VM control limited');
                     this._qmpAvailable = false;
                     resolve();
                     return;
@@ -1373,8 +1370,8 @@ class KvmBackend extends BackendBase {
         // We listen on vsock and forward to a local Unix bridge socket so that
         // _forwardToGuest can connect to the bridge to reach the guest daemon.
         //
-        // Direction: guest â vsock:51234 â socat â bridge.sock
-        //            _forwardToGuest â bridge.sock â socat â vsock â guest
+        // Direction: guest → vsock:51234 → socat → bridge.sock
+        //            _forwardToGuest → bridge.sock → socat → vsock → guest
         //
         // socat listens on the vsock port for the guest's outbound connection
         // and bridges it to a Unix socket that we can use for bidirectional RPC.
@@ -1398,7 +1395,7 @@ class KvmBackend extends BackendBase {
 
     _startBridgeServer() {
         // Create a Unix socket server that accepts connections from socat
-        // (guestâvsockâsocatâbridge.sock) and from _forwardToGuest.
+        // (guest→vsock→socat→bridge.sock) and from _forwardToGuest.
         // The first inbound connection from socat is the guest sdk-daemon.
         return new Promise((resolve) => {
             this._bridgeServer = net.createServer((conn) => {
@@ -1460,7 +1457,7 @@ class KvmBackend extends BackendBase {
                 // Guest sends {type:"event", event:"networkStatus", params:{...}}
                 this.emitEvent({ type: msg.event, ...msg.params });
             } else if (msg.type === 'response' || msg.success !== undefined) {
-                // Response to a request we sent â route to pending callback
+                // Response to a request we sent — route to pending callback
                 // Guest sends {type:"response", id:"1", result:{success:true}}
                 if (msg.error) {
                     log(`KvmBackend: guest response ERROR for id=${msg.id}:`, JSON.stringify(msg.error));
@@ -1688,7 +1685,7 @@ class KvmBackend extends BackendBase {
             });
             // Track that this process exists in the guest.
             // Events (stdout/stderr/exit) flow back through the
-            // single guest connection â _handleGuestData â emitEvent.
+            // single guest connection → _handleGuestData → emitEvent.
             this.processes.set(id, { remote: true });
 
             return result.result || {};
@@ -1743,14 +1740,14 @@ class KvmBackend extends BackendBase {
         log(`KvmBackend mountPath: ${mountName} -> ${subpath}`);
 
         if (this.homeShareType) {
-            // Home share active (virtiofs or 9p) â guest accesses
+            // Home share active (virtiofs or 9p) — guest accesses
             // host files via the shared mount
             const guestPath =
                 path.join(HOME_SHARE_GUEST_MOUNT, subpath || '');
             return { guestPath };
         }
 
-        // No home share â return host path with a warning
+        // No home share — return host path with a warning
         const hostPath = resolveSubpath(subpath);
         log('KvmBackend: no home share, returning host path');
         return { guestPath: hostPath };
@@ -1871,7 +1868,7 @@ function detectBackend(emitEvent) {
         log(`bwrap not available: ${e.message}`);
     }
 
-    // Note: rootfs is NOT checked here â the app downloads it to
+    // Note: rootfs is NOT checked here — the app downloads it to
     // bundlePath which isn't known until startVM(). The rootfs
     // check happens at startVM time instead.
     try {
@@ -1889,7 +1886,7 @@ function detectBackend(emitEvent) {
 }
 
 // ============================================================
-// VMManager â Thin Dispatcher
+// VMManager — Thin Dispatcher
 // ============================================================
 
 class VMManager {
@@ -1904,7 +1901,7 @@ class VMManager {
         const config = {};
         if (params.memoryMB !== undefined) config.memoryMB = params.memoryMB;
         if (params.cpuCount !== undefined) config.cpuCount = params.cpuCount;
-        // init is async but configure is sync in the protocol â
+        // init is async but configure is sync in the protocol —
         // fire-and-forget is fine for config
         this.backend.init(config).catch((e) => {
             logError('Backend init error:', e.message);
