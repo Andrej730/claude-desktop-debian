@@ -954,24 +954,17 @@ patch_quick_window() {
 	fi
 
 	# Part 2: Fix main window not appearing after quick entry submit.
-	# The quick entry functions (ekt/jmi) use a focus check to gate
-	# Lt.show():  FOCUS_CHECK()||Lt.show()
-	# On Linux, pt.webContents.isFocused() can return stale true even
-	# when the window is hidden, causing the show to be skipped.
-	# Other functions (zje/Mmi) correctly use a visibility check instead.
-	# Fix: replace the focus check with the visibility check in quick
-	# entry code, anchored on unique "[QuickEntry]" log strings.
+	# On Linux, isFocused() can return stale true after hiding, causing
+	# FOCUS_CHECK()||Lt.show() to skip the show. Replace the focus check
+	# with the visibility check in quick entry code paths.
 	if INDEX_JS="$index_js" node << 'QUICK_WINDOW_PATCH'
 const fs = require('fs');
 const indexJs = process.env.INDEX_JS;
 let code = fs.readFileSync(indexJs, 'utf8');
 let patchCount = 0;
 
-// Find the "isWindowFocused" function (minified _2):
-//   function NAME(){return!VAR||VAR.isDestroyed()?!1:VAR.isFocused()||...}
-// And the "isWindowVisible" function (minified X5e):
-//   function NAME(){return!VAR||VAR.isDestroyed()?!1:VAR.isVisible()||...}
-// Both are exposed via named properties, making them easy to find.
+// Find the minified isWindowFocused function via its named property
+// export: isWindowFocused: () => !!NAME()
 const focusedPropRe = /isWindowFocused:\s*\(\)\s*=>\s*!!(\w+)\(\)/;
 const focusedMatch = code.match(focusedPropRe);
 if (!focusedMatch) {
@@ -981,11 +974,9 @@ if (!focusedMatch) {
 const focusFn = focusedMatch[1];
 console.log('  Found focus check function: ' + focusFn);
 
-// Find the visibility function by its pattern: uses isVisible instead of
-// isFocused, defined near the focus function
+// Find the sibling isVisible function defined near the focus function
 const focusFnIdx = code.indexOf('function ' + focusFn + '(');
 const nearbyCode = code.substring(focusFnIdx, focusFnIdx + 500);
-// The visibility function is defined right after the focus function
 const visFnRe = /function (\w+)\(\)\{return!\w+\|\|\w+\.isDestroyed\(\)\?!1:\w+\.isVisible\(\)/;
 const visMatch = nearbyCode.match(visFnRe);
 if (!visMatch) {
@@ -996,12 +987,10 @@ if (!visMatch) {
 const visFn = visMatch[1];
 console.log('  Found visibility check function: ' + visFn);
 
-// Patch: in quick entry functions, replace FOCUS_FN()||MAINWIN.show()
-// with VISIBLE_FN()||MAINWIN.show()
-// Anchor on unique QuickEntry strings to only patch the right call sites
+// Anchor on unique QuickEntry log strings to patch only the right sites
 const anchors = [
-    'Navigating to existing chat',       // jmi function
-    'Creating new chat with submit_quick_entry', // ekt function
+    'Navigating to existing chat',
+    'Creating new chat with submit_quick_entry',
 ];
 for (const anchor of anchors) {
     const anchorIdx = code.indexOf(anchor);
@@ -1009,8 +998,7 @@ for (const anchor of anchors) {
         console.log('  WARNING: anchor not found: ' + anchor);
         continue;
     }
-    // Search after the anchor for FOCUS_FN()||MAINWIN.show()
-    // ekt has a long promise chain between anchor and setTimeout, needs ~1000 chars
+    // Search region after anchor (1500 chars covers promise chains)
     const region = code.substring(anchorIdx, anchorIdx + 1500);
     const showRe = new RegExp(
         focusFn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
@@ -1022,7 +1010,6 @@ for (const anchor of anchors) {
         const mainWin = showMatch[1];
         const newStr = visFn + '()||' + mainWin + '.show()';
         if (oldStr !== newStr) {
-            // Replace only this specific occurrence
             const absIdx = anchorIdx + region.indexOf(oldStr);
             code = code.substring(0, absIdx) + newStr +
                 code.substring(absIdx + oldStr.length);
