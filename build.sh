@@ -920,10 +920,136 @@ patch_menu_bar_default() {
 }
 
 patch_quick_window() {
-	if ! grep -q 'e.blur(),e.hide()' app.asar.contents/.vite/build/index.js; then
-		sed -i 's/e.hide()/e.blur(),e.hide()/' app.asar.contents/.vite/build/index.js
-		echo 'Added blur() call to fix quick window submit issue'
+	echo 'Patching quick window for Linux...'
+	local index_js='app.asar.contents/.vite/build/index.js'
+
+	# Extract the quick window variable name from the unique "pop-up-menu"
+	# setAlwaysOnTop call, e.g.: Sa.setAlwaysOnTop(!0,"pop-up-menu")
+	local quick_var
+	quick_var=$(grep -oP '\w+(?=\.setAlwaysOnTop\(\s*!0\s*,\s*"pop-up-menu"\))' \
+		"$index_js" | head -1)
+	if [[ -z $quick_var ]]; then
+		echo 'WARNING: Could not extract quick window variable name'
+		echo '##############################################################'
+		return
 	fi
+	echo "  Found quick window variable: $quick_var"
+
+	local quick_var_re="${quick_var//\$/\\$}"
+
+	# Part 1: Add blur() before hide() on the quick window so that
+	# isFocused() returns false after hiding (Electron Linux bug).
+	# The hide call sits after || (e.g. GUARD()||VAR.hide()), so both
+	# calls must be wrapped in parens to preserve short-circuit semantics.
+	if grep -qP "${quick_var_re}\.blur\(\),${quick_var_re}\.hide\(\)" \
+		"$index_js"; then
+		echo '  Quick window blur already patched'
+	elif grep -qP "\|\|${quick_var_re}\.hide\(\)" "$index_js"; then
+		sed -i \
+			"s/||${quick_var_re}\.hide()/||(${quick_var_re}.blur(),${quick_var_re}.hide())/g" \
+			"$index_js"
+		echo '  Added blur() before hide() on quick window'
+	else
+		echo '  WARNING: Could not find quick window hide() call'
+	fi
+
+	# Part 2: Fix main window not appearing after quick entry submit.
+	# The quick entry functions (ekt/jmi) use a focus check to gate
+	# Lt.show():  FOCUS_CHECK()||Lt.show()
+	# On Linux, pt.webContents.isFocused() can return stale true even
+	# when the window is hidden, causing the show to be skipped.
+	# Other functions (zje/Mmi) correctly use a visibility check instead.
+	# Fix: replace the focus check with the visibility check in quick
+	# entry code, anchored on unique "[QuickEntry]" log strings.
+	if INDEX_JS="$index_js" node << 'QUICK_WINDOW_PATCH'
+const fs = require('fs');
+const indexJs = process.env.INDEX_JS;
+let code = fs.readFileSync(indexJs, 'utf8');
+let patchCount = 0;
+
+// Find the "isWindowFocused" function (minified _2):
+//   function NAME(){return!VAR||VAR.isDestroyed()?!1:VAR.isFocused()||...}
+// And the "isWindowVisible" function (minified X5e):
+//   function NAME(){return!VAR||VAR.isDestroyed()?!1:VAR.isVisible()||...}
+// Both are exposed via named properties, making them easy to find.
+const focusedPropRe = /isWindowFocused:\s*\(\)\s*=>\s*!!(\w+)\(\)/;
+const focusedMatch = code.match(focusedPropRe);
+if (!focusedMatch) {
+    console.log('  WARNING: Could not find isWindowFocused function');
+    process.exit(0);
+}
+const focusFn = focusedMatch[1];
+console.log('  Found focus check function: ' + focusFn);
+
+// Find the visibility function by its pattern: uses isVisible instead of
+// isFocused, defined near the focus function
+const focusFnIdx = code.indexOf('function ' + focusFn + '(');
+const nearbyCode = code.substring(focusFnIdx, focusFnIdx + 500);
+// The visibility function is defined right after the focus function
+const visFnRe = /function (\w+)\(\)\{return!\w+\|\|\w+\.isDestroyed\(\)\?!1:\w+\.isVisible\(\)/;
+const visMatch = nearbyCode.match(visFnRe);
+if (!visMatch) {
+    console.log('  WARNING: Could not find visibility function near ' +
+        focusFn);
+    process.exit(0);
+}
+const visFn = visMatch[1];
+console.log('  Found visibility check function: ' + visFn);
+
+// Patch: in quick entry functions, replace FOCUS_FN()||MAINWIN.show()
+// with VISIBLE_FN()||MAINWIN.show()
+// Anchor on unique QuickEntry strings to only patch the right call sites
+const anchors = [
+    'Navigating to existing chat',       // jmi function
+    'Creating new chat with submit_quick_entry', // ekt function
+];
+for (const anchor of anchors) {
+    const anchorIdx = code.indexOf(anchor);
+    if (anchorIdx === -1) {
+        console.log('  WARNING: anchor not found: ' + anchor);
+        continue;
+    }
+    // Search after the anchor for FOCUS_FN()||MAINWIN.show()
+    // ekt has a long promise chain between anchor and setTimeout, needs ~1000 chars
+    const region = code.substring(anchorIdx, anchorIdx + 1500);
+    const showRe = new RegExp(
+        focusFn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
+        '\\(\\)\\|\\|(\\w+)\\.show\\(\\)'
+    );
+    const showMatch = region.match(showRe);
+    if (showMatch) {
+        const oldStr = showMatch[0];
+        const mainWin = showMatch[1];
+        const newStr = visFn + '()||' + mainWin + '.show()';
+        if (oldStr !== newStr) {
+            // Replace only this specific occurrence
+            const absIdx = anchorIdx + region.indexOf(oldStr);
+            code = code.substring(0, absIdx) + newStr +
+                code.substring(absIdx + oldStr.length);
+            console.log('  Replaced ' + focusFn + '() with ' + visFn +
+                '() for show() near "' + anchor.substring(0, 30) + '..."');
+            patchCount++;
+        }
+    } else {
+        console.log('  WARNING: show() pattern not found near "' +
+            anchor + '"');
+    }
+}
+
+if (patchCount > 0) {
+    fs.writeFileSync(indexJs, code);
+    console.log('  Patched ' + patchCount +
+        ' quick entry show() calls to use visibility check');
+} else {
+    console.log('  WARNING: No quick entry show() calls patched');
+}
+QUICK_WINDOW_PATCH
+	then
+		echo 'Quick window patches applied'
+	else
+		echo 'WARNING: Quick window show patch failed' >&2
+	fi
+	echo '##############################################################'
 }
 
 patch_linux_claude_code() {
