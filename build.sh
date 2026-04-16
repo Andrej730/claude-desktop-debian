@@ -1413,19 +1413,13 @@ if (serviceErrorIdx !== -1) {
                 whole,
                 'const ' + name + '=[' + newContents + '];'
             );
-            console.log(
-                '  Added VM images to reinstall delete list'
-            );
+            console.log('  Added VM images to reinstall delete list');
             patchCount++;
         } else {
-            console.log(
-                '  Reinstall delete list already includes VM images'
-            );
+            console.log('  Reinstall delete list already includes VM images');
         }
     } else {
-        console.log(
-            '  WARNING: Could not find reinstall file list array'
-        );
+        console.log('  WARNING: Could not find reinstall file list array');
     }
 }
 
