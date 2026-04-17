@@ -1432,25 +1432,29 @@ if (serviceErrorIdx !== -1) {
             const regionStart = Math.max(0, anchorIdx - 1000);
             const region = code.substring(regionStart, anchorIdx);
 
+            // JS identifier may start with $, _, or letter; \w doesn't
+            // match $ so use [$\w]+ to capture vars like `$e` (Claude
+            // >= 1.3109.0 uses $e for the fs module to avoid collision
+            // with the parameter `e`). See issue #418.
             // path var: VAR.join(process.resourcesPath,
             const pathMatch = region.match(
-                /(\w+)\.join\(\s*process\.resourcesPath\s*,/
+                /([$\w]+)\.join\(\s*process\.resourcesPath\s*,/
             );
             // fs var: VAR.existsSync(
-            const fsMatch = region.match(/(\w+)\.existsSync\(/);
+            const fsMatch = region.match(/([$\w]+)\.existsSync\(/);
             // logger var: VAR.info("[VM:start]
             const logMatch = region.match(
-                /(\w+)\.info\(\s*[`"]\[VM:start\]/
+                /([$\w]+)\.info\(\s*[`"]\[VM:start\]/
             );
             // stream/pipeline var: VAR.pipeline(
-            const streamMatch = region.match(/(\w+)\.pipeline\(/);
+            const streamMatch = region.match(/([$\w]+)\.pipeline\(/);
             // arch function: const VAR=FUNC(), used in smol-bin
             const archMatch = region.match(
-                /const\s+(\w+)\s*=\s*(\w+)\(\)\s*,\s*\w+\s*=\s*\w+\.join/
+                /const\s+([$\w]+)\s*=\s*([$\w]+)\(\)\s*,\s*[$\w]+\s*=\s*[$\w]+\.join/
             );
             // bundlePath var: PATH.join(VAR,"smol-bin.vhdx")
             const bundleMatch = region.match(
-                /\.join\(\s*(\w+)\s*,\s*"smol-bin\.vhdx"\s*\)/
+                /\.join\(\s*([$\w]+)\s*,\s*"smol-bin\.vhdx"\s*\)/
             );
 
             if (pathMatch && fsMatch && logMatch &&
@@ -1483,9 +1487,34 @@ if (serviceErrorIdx !== -1) {
                         '`[VM:start] smol-bin.${_la}' +
                         '.vhdx not found at ${_ls}`)' +
                     '}';
-                code = code.substring(0, closingBrace + 1) +
+                // Defensive: if a future upstream emits its own
+                // if(process.platform==="linux"){...} block right
+                // after the win32 close brace, strip it before
+                // injecting our correctly-wired linuxBlock so we
+                // don't end up with two competing blocks.
+                const insertPos = closingBrace + 1;
+                let stripUntil = insertPos;
+                const afterWin32 = code.substring(insertPos);
+                const upstreamRe = /^\s*if\s*\(\s*process\.platform\s*===\s*"linux"\s*\)\s*\{/;
+                const upstreamMatch = afterWin32.match(upstreamRe);
+                if (upstreamMatch) {
+                    const matchEnd = insertPos + upstreamMatch[0].length;
+                    let depth = 1, pos = matchEnd;
+                    while (depth > 0 && pos < code.length) {
+                        if (code[pos] === '{') depth++;
+                        else if (code[pos] === '}') depth--;
+                        pos++;
+                    }
+                    if (depth === 0) {
+                        stripUntil = pos;
+                        console.log('  Stripped pre-existing upstream Linux block');
+                    } else {
+                        console.log('  WARNING: Upstream Linux block found but braces unbalanced; not stripping');
+                    }
+                }
+                code = code.substring(0, insertPos) +
                     linuxBlock +
-                    code.substring(closingBrace + 1);
+                    code.substring(stripUntil);
                 console.log('  Injected Linux smol-bin copy block (skips _.configure)');
                 console.log(`    vars: path=${pathVar} fs=${fsVar} log=${logVar} stream=${streamVar} arch=${archFunc} bundle=${bundleVar}`);
                 patchCount++;
@@ -1605,6 +1634,18 @@ install_node_pty() {
 			"$app_staging_dir/app.asar.contents/node_modules/node-pty/" || exit 1
 		cp "$pty_src_dir/package.json" \
 			"$app_staging_dir/app.asar.contents/node_modules/node-pty/" || exit 1
+		# Also stage build/ so `asar pack --unpack '**/*.node'` can
+		# create a properly-tracked .unpacked entry. Without this,
+		# the asar manifest has no node-pty/build/ entry and
+		# Electron's asar->.unpacked redirect never fires, so
+		# require('../build/Release/pty.node') from inside the asar
+		# fails with MODULE_NOT_FOUND even when the binary exists
+		# in app.asar.unpacked/.
+		if [[ -d $pty_src_dir/build ]]; then
+			cp -r "$pty_src_dir/build" \
+				"$app_staging_dir/app.asar.contents/node_modules/node-pty/" || exit 1
+			echo 'node-pty build/ staged (will be unpacked during asar pack)'
+		fi
 		echo 'node-pty JavaScript files copied'
 	elif [[ -z $pty_src_dir ]]; then
 		echo 'node-pty source directory not set'
@@ -1617,7 +1658,13 @@ install_node_pty() {
 }
 
 finalize_app_asar() {
-	"$asar_exec" pack app.asar.contents app.asar || exit 1
+	# Pack with --unpack so native modules (.node) are extracted
+	# into app.asar.unpacked/ AND tracked in the asar manifest as
+	# unpacked. Electron's asar->.unpacked redirect requires the
+	# manifest entry to exist; otherwise loaders that require()
+	# files from inside the asar get MODULE_NOT_FOUND.
+	"$asar_exec" pack app.asar.contents app.asar \
+		--unpack '**/*.node' || exit 1
 
 	mkdir -p "$app_staging_dir/app.asar.unpacked/node_modules/@ant/claude-native" || exit 1
 	cp "$source_dir/scripts/claude-native-stub.js" \
