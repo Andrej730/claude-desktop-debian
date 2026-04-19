@@ -235,11 +235,7 @@ Special thanks to:
 
 ## Sponsorship
 
-Anthropic doesn't publish release notes for Claude Desktop. Each release here includes AI-generated notes that analyze code changes between versions. I wrote up how that process works if you're curious: [Generating Real Release Notes from Minified Electron Apps](https://nonconvexlabs.com/blog/generating-real-release-notes-from-minified-electron-apps).
-
-The analysis runs against Claude's API. Costs vary a lot depending on how big the update is. Recent releases have run between **$3.36 and $76.16 per release**.
-
-If this project is useful to you, consider [sponsoring on GitHub](https://github.com/sponsors/aaddrick) to help cover those costs.
+If this project is useful to you, consider [sponsoring on GitHub](https://github.com/sponsors/aaddrick).
 
 ## License
 
