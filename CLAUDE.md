@@ -108,7 +108,7 @@ Contributors are listed in chronological order: inspirational projects first (k3
 
 ### Important Guidelines
 
-1. **Always use regex patterns** when modifying the source JavaScript in `build.sh`. Variable and function names are minified and **change between releases**.
+1. **Always use regex patterns** when modifying the source JavaScript. Patches live in `scripts/patches/*.sh` (one file per subsystem: `tray.sh`, `cowork.sh`, `claude-code.sh`, etc.); `build.sh` is only an orchestrator that sources them. Variable and function names are minified and **change between releases**.
 
 2. **The beautified code in `build-reference/` has different spacing** than the actual minified code in the app. Patterns must handle both:
    - Minified: `oe.nativeTheme.on("updated",()=>{`
@@ -116,7 +116,7 @@ Contributors are listed in chronological order: inspirational projects first (k3
 
 3. **Use `-E` flag with sed** for extended regex support when patterns need grouping or alternation.
 
-4. **Extract variable names dynamically** rather than hardcoding them. Example from `build.sh`:
+4. **Extract variable names dynamically** rather than hardcoding them. Shared extraction helpers live in `scripts/patches/_common.sh`. Example:
    ```bash
    # Extract function name from a known pattern
    TRAY_FUNC=$(grep -oP 'on\("menuBarEnabled",\(\)=>\{\K\w+(?=\(\)\})' app.asar.contents/.vite/build/index.js)
@@ -143,7 +143,7 @@ The app uses a wrapper system to intercept and fix Electron behavior for Linux:
 - **`frame-fix-wrapper.js`** - Intercepts `require('electron')` to patch BrowserWindow defaults (e.g., `frame: true` for proper window decorations on Linux)
 - **`frame-fix-entry.js`** - Entry point that loads the wrapper before the main app
 
-These are injected by `build.sh` and referenced in `package.json`'s `main` field. The wrapper pattern allows fixing Electron behavior without modifying the minified app code directly.
+These are injected by `scripts/patches/app-asar.sh` (inside `patch_app_asar`) and referenced in `package.json`'s `main` field. The wrapper pattern allows fixing Electron behavior without modifying the minified app code directly.
 
 ## Setting Up build-reference
 
@@ -401,7 +401,7 @@ git tag "v1.3.24+claude$(gh variable get CLAUDE_DESKTOP_VERSION)"
 git push origin "v1.3.24+claude$(gh variable get CLAUDE_DESKTOP_VERSION)"
 ```
 
-When upstream Claude Desktop updates, the `check-claude-version` workflow automatically updates `CLAUDE_DESKTOP_VERSION`, patches `build.sh` URLs, and creates a new tag — no manual intervention needed.
+When upstream Claude Desktop updates, the `check-claude-version` workflow automatically updates `CLAUDE_DESKTOP_VERSION`, patches the URLs in `scripts/setup/detect-host.sh`, and creates a new tag — no manual intervention needed.
 
 ## Common Gotchas
 
@@ -413,17 +413,17 @@ When upstream Claude Desktop updates, the `check-claude-version` workflow automa
   ```
 - **SingletonLock** - If app won't start, check for stale lock: `~/.config/Claude/SingletonLock`
 - **Node version** - Build requires Node.js; the script downloads its own if needed
-- **Nix hashes** - When Claude Desktop version changes, both `build.sh` URLs and `nix/claude-desktop.nix` (version, URLs, SRI hashes) must be updated. The CI handles this automatically.
-- **Claude Desktop version** - A GitHub Action automatically updates the `CLAUDE_DESKTOP_VERSION` repo variable and the URLs in `build.sh` on main when a new version is detected. Before committing `build.sh`, ensure your branch has the latest URLs:
+- **Nix hashes** - When Claude Desktop version changes, both the URLs in `scripts/setup/detect-host.sh` and `nix/claude-desktop.nix` (version, URLs, SRI hashes) must be updated. The CI handles this automatically.
+- **Claude Desktop version** - A GitHub Action automatically updates the `CLAUDE_DESKTOP_VERSION` repo variable and the URLs in `scripts/setup/detect-host.sh` on main when a new version is detected. Before committing `scripts/setup/detect-host.sh`, ensure your branch has the latest URLs:
   ```bash
   # Check repo variable (source of truth)
   gh variable get CLAUDE_DESKTOP_VERSION
 
-  # Check current version in build.sh
-  grep -oP 'x64/\K[0-9]+\.[0-9]+\.[0-9]+' build.sh | head -1
+  # Check current version in the detect_architecture case statement
+  grep -oP 'x64/\K[0-9]+\.[0-9]+\.[0-9]+' scripts/setup/detect-host.sh | head -1
 
   # If outdated, pull URLs from main branch
-  gh api repos/aaddrick/claude-desktop-debian/contents/build.sh?ref=main \
-    --jq '.content' | base64 -d | grep -E "CLAUDE_DOWNLOAD_URL=|claude_download_url="
+  gh api repos/aaddrick/claude-desktop-debian/contents/scripts/setup/detect-host.sh?ref=main \
+    --jq '.content' | base64 -d | grep -E "claude_download_url="
   ```
   Update both amd64 and arm64 URLs in `detect_architecture()` to match main

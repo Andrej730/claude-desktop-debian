@@ -9,9 +9,10 @@ it over a Unix domain socket at
 `$XDG_RUNTIME_DIR/cowork-vm-service.sock` using length-prefixed JSON —
 the same wire format as the Windows named pipe.
 
-The daemon is forked by **Patch 6** in `build.sh`'s
-`patch_cowork_linux()` function, which injects auto-launch code into
-the Electron app's retry loop for the VM-service connection.
+The daemon is forked by **Patch 6** in the
+`patch_cowork_linux()` function (`scripts/patches/cowork.sh`), which
+injects auto-launch code into the Electron app's retry loop for the
+VM-service connection.
 
 ## Daemon Lifecycle
 
@@ -76,7 +77,7 @@ even after rolling back the AppImage to a known-good version.
 
 ### Fix (extend delete list — Patch 6b)
 
-`build.sh` now matches the `const NAME=["rootfs.img",...]` array at
+`scripts/patches/cowork.sh` now matches the `const NAME=["rootfs.img",...]` array at
 module level and appends `"sessiondata.img"` and `"rootfs.img.zst"` if
 they're not already present. The auto-reinstall path now wipes these
 too. Trade-off: the next successful startup re-downloads/re-extracts
@@ -121,8 +122,10 @@ Interpreting the log after a failure:
 
 ## Key Files
 
-- [`build.sh`](../../build.sh) lines ~1274-1390 — Patch 6 (auto-launch +
-  stdio pipe + rate limiter) and Patch 6b (reinstall array extension).
+- [`scripts/patches/cowork.sh`](../../scripts/patches/cowork.sh)
+  inside `patch_cowork_linux()` — Patch 6 (auto-launch + stdio pipe +
+  rate limiter) and Patch 6b (reinstall array extension). Search for
+  `# Patch 6` anchors; line numbers drift between upstream releases.
 - [`scripts/cowork-vm-service.js`](../../scripts/cowork-vm-service.js)
   lines ~49-86 — log infrastructure, including `logLifecycle()`.
 - [`scripts/cowork-vm-service.js`](../../scripts/cowork-vm-service.js)

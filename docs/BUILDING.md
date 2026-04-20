@@ -122,9 +122,9 @@ The build script (`build.sh`) handles:
 A GitHub Actions workflow runs daily to check for new Claude Desktop releases:
 
 1. Uses Playwright to resolve Anthropic's Cloudflare-protected download redirects
-2. Compares resolved URLs with those in `build.sh`
+2. Compares resolved URLs with those in `scripts/setup/detect-host.sh`
 3. If a new version is detected:
-   - Updates `build.sh` with new download URLs
+   - Updates `scripts/setup/detect-host.sh` with new download URLs
    - Updates `nix/claude-desktop.nix` with new version, URLs, and SRI hashes
    - Creates a new release tag
    - Triggers automated builds for both architectures
@@ -140,4 +140,4 @@ If you need to build with a specific version before the automation catches it:
    ./build.sh --exe /path/to/Claude-Setup.exe
    ```
 
-2. **Update the URL**: Modify the `CLAUDE_DOWNLOAD_URL` variables in `build.sh`.
+2. **Update the URL**: Modify the `claude_download_url` assignments in `scripts/setup/detect-host.sh` (inside the `detect_architecture` case statement).
