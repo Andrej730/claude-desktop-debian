@@ -48,7 +48,7 @@ Use this when you're not confident enough to triage automatically. Examples: sec
 ## INVESTIGATION RULES
 
 ### All bugs are ours to fix
-This project's goal is to take a working Anthropic product and make it work on Linux. Every bug is something we can investigate and potentially patch. Check `build.sh` patches first for bugs in patched areas (cowork, tray, frame, platform checks, window decorations). Read the relevant `patch_` function and trace what it modifies. If a behavior difference exists between the Windows/macOS app and our Linux build, that's a gap in our patching, not someone else's problem.
+This project's goal is to take a working Anthropic product and make it work on Linux. Every bug is something we can investigate and potentially patch. Check `scripts/patches/*.sh` first for bugs in patched areas (`cowork.sh`, `tray.sh`, `app-asar.sh`, `titlebar.sh`, `quick-window.sh`, `claude-code.sh`). Read the relevant `patch_` function and trace what it modifies. If a behavior difference exists between the Windows/macOS app and our Linux build, that's a gap in our patching, not someone else's problem.
 
 ### Verify before stating
 Only state facts you verified by reading actual code or running commands. Never claim code exists, functions behave a certain way, or patterns match without finding them in the source. If you cannot find evidence, say so explicitly rather than speculating.
@@ -66,7 +66,7 @@ If you cannot verify a root cause, classify as `needs-human` rather than constru
 These are specific mistakes that have caused bad triage outcomes:
 
 - **Never claim code exists without grep evidence.** If you say "the manifest ships linux entries," show the grep output that proves it. (#329: triage claimed linux manifest entries existed when they don't)
-- **Never dismiss a bug as someone else's problem.** Every issue is ours to investigate. Check `build.sh` patches first since our patches are often the cause. (#329: triage blamed CDN when our checksum patch was wrong)
+- **Never dismiss a bug as someone else's problem.** Every issue is ours to investigate. Check `scripts/patches/*.sh` first since our patches are often the cause. (#329: triage blamed CDN when our checksum patch was wrong)
 - **Never speculate about network/CDN behavior.** Use `curl -sI URL | head -5` to check. Don't guess HTTP status codes.
 - **Never propose patches to code paths that aren't reached.** Trace the actual execution flow before suggesting a fix. (#329: triage suggested patching a catch block that was never hit)
 - **Never present a theory as a finding.** Use "likely," "possibly," or "I could not confirm" when you haven't verified something. Reserve declarative statements for verified facts.
@@ -79,15 +79,15 @@ When investigating bugs, search these files based on the issue category:
 
 | Category | Files to check |
 |----------|---------------|
-| Build failures | `build.sh`, `.github/workflows/ci.yml`, `build-amd64.yml`, `build-arm64.yml` |
-| Window/frame issues | `frame-fix-wrapper.js`, `frame-fix-entry.js`, search reference source for `BrowserWindow` |
-| Tray icon issues | `build.sh` (search `patch_tray`), reference source for `Tray`, `StatusNotifier` |
-| Packaging (deb) | `build.sh` (search `build_deb`), `scripts/` directory |
-| Packaging (rpm) | `build.sh` (search `build_rpm`), `scripts/` directory |
-| Packaging (AppImage) | `build.sh` (search `build_appimage`) |
+| Build failures | `build.sh` (orchestrator), `scripts/setup/`, `.github/workflows/ci.yml`, `build-amd64.yml`, `build-arm64.yml` |
+| Window/frame issues | `scripts/frame-fix-wrapper.js`, `scripts/patches/titlebar.sh`, `scripts/patches/app-asar.sh`, reference source for `BrowserWindow` |
+| Tray icon issues | `scripts/patches/tray.sh`, reference source for `Tray`, `StatusNotifier` |
+| Packaging (deb) | `scripts/packaging/deb.sh`, `scripts/launcher-common.sh` |
+| Packaging (rpm) | `scripts/packaging/rpm.sh`, `scripts/launcher-common.sh` |
+| Packaging (AppImage) | `scripts/packaging/appimage.sh`, `scripts/launcher-common.sh` |
 | Packaging (nix) | `nix/` directory, `flake.nix` |
-| Cowork/MCP issues | `cowork-vm-service.js`, `build.sh` (search `patch_cowork`) |
-| Native module issues | `claude-native-stub.js`, `build.sh` (search `native`) |
+| Cowork/MCP issues | `scripts/cowork-vm-service.js`, `scripts/patches/cowork.sh`, `scripts/staging/cowork-resources.sh` |
+| Native module issues | `scripts/claude-native-stub.js`, `scripts/patches/cowork.sh` (node-pty install) |
 | CI/workflow issues | `.github/workflows/` directory |
 
 The **reference source** (`/tmp/ref-source/app-extracted/`) contains the beautified Claude Desktop JavaScript. Use it to understand the original behavior that the build script patches or wraps. Key files:

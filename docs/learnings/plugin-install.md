@@ -298,9 +298,9 @@ both the structural bug and the upstream fix.
 
 ## Key Files
 
-- [`build.sh`](../../build.sh) — `patch_cowork_linux()` applies
-  the cowork patches to the asar. Patches 1–10 handle cowork mode
-  infrastructure on Linux.
+- [`scripts/patches/cowork.sh`](../../scripts/patches/cowork.sh) —
+  `patch_cowork_linux()` applies the cowork patches to the asar.
+  Patches 1–10 handle cowork mode infrastructure on Linux.
 - [`scripts/cowork-vm-service.js`](../../scripts/cowork-vm-service.js)
   — Linux cowork VM daemon (separate subsystem, see
   [`cowork-vm-daemon.md`](cowork-vm-daemon.md)).

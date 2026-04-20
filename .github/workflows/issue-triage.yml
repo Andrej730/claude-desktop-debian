@@ -344,11 +344,14 @@ jobs:
             cat << 'BODY'
 
           ## How This Project Patches Upstream Code
-          IMPORTANT: All fixes to the original JavaScript are applied via sed/regex in build.sh.
+          IMPORTANT: All fixes to the original JavaScript are applied via sed/regex in scripts/patches/*.sh.
+          Each subsystem owns its own file — tray.sh, cowork.sh, claude-code.sh, quick-window.sh,
+          titlebar.sh, app-asar.sh — with shared helpers in scripts/patches/_common.sh.
+          build.sh is a ~300-line orchestrator that sources these modules in order.
           Variable and function names are MINIFIED and change between releases.
           Patches must use regex patterns that match both minified and beautified spacing.
           Variable names are extracted dynamically with grep -oP, never hardcoded.
-          See build.sh for examples of existing patches (search for patch_ functions).
+          See scripts/patches/*.sh for examples of existing patches (search for patch_ functions).
           The wrapper files (frame-fix-wrapper.js, frame-fix-entry.js) intercept require('electron')
           and can patch BrowserWindow defaults without touching minified code.
 
@@ -357,10 +360,11 @@ jobs:
           ### All bugs are ours to fix
           This project's goal is to take a working Anthropic product and make it work
           on Linux. Every bug is something we can investigate and potentially patch.
-          Check build.sh patches first for bugs in patched areas (cowork, tray, frame,
-          platform checks, window decorations). Read the relevant patch_ function and
-          trace what it modifies. If a behavior difference exists between Windows/macOS
-          and our Linux build, that is a gap in our patching.
+          Check scripts/patches/*.sh first for bugs in patched areas (cowork.sh for cowork,
+          tray.sh for tray, titlebar.sh or quick-window.sh for window decorations, app-asar.sh
+          for platform checks / frame). Read the relevant patch_ function and trace what it
+          modifies. If a behavior difference exists between Windows/macOS and our Linux build,
+          that is a gap in our patching.
 
           ### Verify before stating
           Only state facts you verified by reading actual code or running commands.
@@ -392,7 +396,7 @@ jobs:
           - The exact anchor strings or regex patterns to locate the target code in minified source
           - What the sed replacement should do (insert, wrap, modify)
           - Any variable names that need dynamic extraction (with the grep -oP pattern to extract them)
-          - Whether the fix belongs in build.sh (sed patch) or frame-fix-wrapper.js (Electron intercept)
+          - Whether the fix belongs in scripts/patches/*.sh (sed patch) or frame-fix-wrapper.js (Electron intercept)
           - Surrounding context (what comes before/after the target) to make the regex unique
           The goal is to give enough context that an agent can write the patch without re-reading the source.
           BODY
