@@ -104,6 +104,10 @@ build_electron_args() {
 		electron_args+=('--ozone-platform=wayland')
 		electron_args+=('--enable-wayland-ime')
 		electron_args+=('--wayland-text-input-version=3')
+		# Override any system-wide GDK_BACKEND=x11 that would silently
+		# prevent GTK from connecting to the Wayland compositor, causing
+		# blurry rendering or launch failures on HiDPI displays.
+		export GDK_BACKEND=wayland
 	fi
 }
 
